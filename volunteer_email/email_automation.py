@@ -21,73 +21,114 @@ def get_volunteers():
     return [v["email"] for v in response.data if "email" in v]
 
 def get_unsent_published_events():
-    """Fetch all published events that have not had emails sent yet"""
-    response = supabase.table("events").select("id, title, location, start_date, end_date, registration_deadline, email_sent").eq("status", "published").eq("email_sent", False).execute()
-    return response.data  # List of events
+    """Fetch all events where email_sent is False and status is 'Published'"""
+    response = supabase.table("events").select("id, title, location, start_date, end_date, registration_deadline").eq("status", "published").eq("email_sent", False).execute()
+    return response.data
 
-def mark_email_sent(event_id):
-    """Update event to mark that emails have been sent"""
-    supabase.table("events").update({"email_sent": True}).eq("id", event_id).execute()
-
-def send_email(to_email, event_title, location, start_date, end_date, registration_deadline):
+def send_email(to_email, event_title, location, start_date, end_date, deadline):
     """Send an email notification about an event to a volunteer"""
-    subject = f"📢 Upcoming Event: {event_title} 🚀"
+    subject = f"🚀 {event_title} - Join Us for an Exciting Event!"
 
-    html_content = f"""
-    <html>
-    <body>
-        <h2>📢 <span style="color: #007bff;">Upcoming Event: {event_title}</span> 🚀</h2>
-        <p>Dear Volunteer,</p>
-        <p>We are excited to invite you to our upcoming event:</p>
+    # HTML Email Content
+    email_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }}
+        .container {{
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            margin: auto;
+        }}
+        h2 {{
+            color: #007bff;
+        }}
+        .details {{
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            background: #f9f9f9;
+            margin: 20px 0;
+        }}
+        .details p {{
+            margin: 5px 0;
+        }}
+        .register-button {{
+            display: inline-block;
+            background-color: #ff0000;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }}
+        .highlight {{
+            color: #2c3e50;
+            font-weight: bold;
+        }}
+    </style>
+</head>
+<body>
 
-        <table border="1" cellspacing="0" cellpadding="5">
-            <tr>
-                <td>📍 <b>Location:</b></td>
-                <td>{location}</td>
-            </tr>
-            <tr>
-                <td>📅 <b>Start Date:</b></td>
-                <td>{start_date}</td>
-            </tr>
-            <tr>
-                <td>📅 <b>End Date:</b></td>
-                <td>{end_date}</td>
-            </tr>
-            <tr>
-                <td style="background-color: #ffcccc;"><b>⏳ Deadline:</b></td>
-                <td style="background-color: #ffcccc;"><b>{registration_deadline}</b></td>
-            </tr>
-        </table>
+<div class="container">
+    <h2>🚀 {event_title} 🚀</h2>
+    
+    <p>Dear Volunteer,</p>
+    <p>We are excited to invite you to our upcoming event:</p>
 
-        <p>Looking forward to seeing you there!</p>
+    <div class="details">
+        <p>📍 <strong>Location:</strong> {location}</p>
+        <p>📅 <strong>Start Date:</strong> {start_date}</p>
+        <p>🏁 <strong>End Date:</strong> {end_date}</p>
+        <p>⏳ <strong style="color: red;">Registration Deadline:</strong> {deadline}</p>
+    </div>
 
-        <p>Best Regards,<br><b>Samarthanam Team</b></p>
-    </body>
-    </html>
-    """
+    <p class="highlight" style="color: #007bff;">Don't miss out! Register now!</p>
 
+    <a href="#" class="register-button" style="color: #FFFFFF;">Register Now</a>
+
+    <p>Best Regards,<br><strong>Samarthanam Team</strong></p>
+</div>
+
+</body>
+</html>
+"""
+
+   
+
+    # Email Setup
     msg = MIMEMultipart()
     msg["From"] = EMAIL_ADDRESS
     msg["To"] = to_email
     msg["Subject"] = subject
-    msg.attach(MIMEText(html_content, "html"))
+    msg.attach(MIMEText(email_html, "html"))
 
+    # Send Email
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
         print(f"✅ Email sent to {to_email} for event '{event_title}'")
+        return True
     except Exception as e:
         print(f"❌ Failed to send email to {to_email}: {e}")
+        return False
 
 def notify_volunteers():
-    """Send email notifications for new published events to all volunteers"""
+    """Send email notifications for all unpublished events and update their status"""
     volunteers = get_volunteers()
     events = get_unsent_published_events()
 
     if not events:
-        print("⚠️ No new published events found.")
+        print("⚠️ No unpublished events found.")
         return
 
     for event in events:
@@ -96,13 +137,17 @@ def notify_volunteers():
         location = event["location"]
         start_date = event["start_date"]
         end_date = event["end_date"]
-        registration_deadline = event["registration_deadline"]
+        deadline = event["registration_deadline"]
 
+        emails_sent = 0
         for email in volunteers:
-            send_email(email, event_title, location, start_date, end_date, registration_deadline)
+            if send_email(email, event_title, location, start_date, end_date, deadline):
+                emails_sent += 1
 
-        # Mark event as email sent in the database
-        mark_email_sent(event_id)
+        if emails_sent > 0:
+            # Update the event status to mark emails as sent
+            supabase.table("events").update({"email_sent": True}).eq("id", event_id).execute()
+            print(f"✅ Updated event {event_id}: Emails marked as sent")
 
 # Run the script
 if __name__ == "__main__":
