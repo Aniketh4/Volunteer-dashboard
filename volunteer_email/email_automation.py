@@ -27,7 +27,7 @@ def get_unsent_published_events():
 
 def send_email(to_email, event_title, location, start_date, end_date, deadline):
     """Send an email notification about an event to a volunteer"""
-    subject = f"🚀 {event_title} - Join Us for an Exciting Event!"
+    subject = f"📢 Upcoming Event: {event_title} - Join Us for an Exciting Event!"
 
     # HTML Email Content
     email_html = f"""<!DOCTYPE html>
